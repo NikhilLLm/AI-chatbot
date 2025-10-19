@@ -29,7 +29,7 @@ class GPT:
 
         # Base payload structure (model + messages)
         self.payload = {
-            "model": "meta-llama/llama-3.3-8b-instruct:free",
+            "model": "qwen/qwen-2.5-72b-instruct:free",
             "messages": [{"role": "user", "content": ""}],
             "parameters":{
                 "return_full_text": False,
