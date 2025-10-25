@@ -4,6 +4,8 @@ from .src.schema.chat import Message
 from .src.redis.cache import Cache
 from .src.redis.stream import StreamConsumer
 from .src.redis.producer import Producer
+from redis.commands.json.path import Path
+
 import os
 import asyncio
 redis=Redis()
@@ -31,13 +33,32 @@ async def main():
                                 message_id = message[0]
                                 token = [k for k,v in message[1].items()][0]
                                 raw_msg = [v for k,v in message[1].items()][0]
+                                
+                                # Skip heartbeat/empty messages
+                                if not raw_msg or raw_msg.strip() in ["", "\u200b"]:
+                                   print("⏭️ Skipping heartbeat or empty message")
+                                   await consumer.delete_message(stream_channel="message_channel", message_id=message_id)
+                                   continue
+
+                                
                                 print("📥 Received message:", token, raw_msg)
 
                                 msg = Message(msg=raw_msg)
                                 await cache.add_message_to_cache(token=token, source="human", message_data=msg.model_dump())
 
                                 data = await cache.get_chat_history(token=token)
-                                message_data = data['messages'][-1:]
+                                if data is None:
+                                    print(f"⚠️ Chat session not found for token {token}, creating new session")
+                                    # Create a basic chat session structure
+                                    json_client.json().set(str(token), Path.root_path(), {
+                                        "token": token,
+                                        "messages": [],
+                                        "name": "User",
+                                        "session_start": __import__('datetime').datetime.now().isoformat()
+                                    })
+                                    data = await cache.get_chat_history(token=token)
+                                
+                                message_data = data['messages'][-5:]
                                 input = ["" + i['msg'] for i in message_data]
                                 input = " ".join(input)
                             
@@ -50,7 +71,7 @@ async def main():
                                 msg = Message(msg=res)
                                 
                                 # Add bot message to cache
-                                await cache.add_message_to_cache(token=token, source="bot", message_data=msg.model_dump())
+                                await cache.add_message_to_cache(token=token, source="gpt", message_data=msg.model_dump())
                                 
                                 # Structure and send response
                                 stream_data = {

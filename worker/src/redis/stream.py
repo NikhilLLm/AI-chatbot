@@ -6,9 +6,9 @@ class StreamConsumer:
         self.last_ids = {}  # Track last read ID for each channel
 
     async def consume_stream(self, count: int, block: int, stream_channel):
-        # Use $ to only read new messages that arrive after we start listening
+        # Read only new messages (avoid replay) using '$'
         response = await self.redis_client.xread(
-            streams={stream_channel: '0-0'}, count=count, block=block)
+            streams={stream_channel: '$'}, count=count, block=block)
         
         return response
 

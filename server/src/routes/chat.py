@@ -59,35 +59,77 @@ async def websocket_endpoint(websocket: WebSocket,token:str=Depends(get_token)):
     await manager.connect(websocket)
     redis_client=await redis.create_connection()
     consumer=StreamConsumer(redis_client)
+    # Ensure we don't miss fast responses: start reading response_channel from beginning
+    consumer.last_ids["response_channel"] = "0-0"
     producer=Producer(redis_client)
     json_client = redis.create_rejson_connection()
     try:
         while True:
             data=await websocket.receive_text()
-            print(data)
+            print(f"📨 Received from WebSocket: {data}")
+            # Ignore heartbeats and empty payloads
+            # if not data:
+            #     print("⏭️ Skipping empty message")
+            #     continue
+            # try:
+            #     if data.startswith('{'):
+            #         maybe = __import__('json').loads(data)
+            #         if isinstance(maybe, dict) and maybe.get('type') == 'ping':
+            #             print("⏭️ Skipping heartbeat ping")
+            #             continue
+            # except Exception:
+            #     pass
+            # # Skip only zero-width heartbeat (do not skip normal whitespace)
+            # if data == '\u200b':
+            #     print("⏭️ Skipping whitespace/zero-width message")
+            #     continue
+
+            print(f"📤 Forwarding to Redis stream: token={token}, data={data}")
             stream_data={}
             stream_data[token]=data
             await producer.add_to_stream(stream_data,"message_channel")
-            response=await consumer.consume_stream(count=1,block=0,stream_channel="response_channel")
-            print(response)
-            for stream,messages in response:
-                for message in messages:
-                    response_token = message[1].get(b"token") or message[1].get("token")
-                    response_msg = message[1].get(b"msg") or message[1].get("msg")
-                    
-                    if response_token and response_msg:
-                        response_token = response_token.decode() if isinstance(response_token, bytes) else response_token
-                        response_msg = response_msg.decode() if isinstance(response_msg, bytes) else response_msg
-                    
-                        if token == response_token:
-                            print("✅ Token matched. Sending response...")
-                            await manager.send_personal_message(response_msg, websocket)
-                    
-                        print(token)
-                        print(response_token)
-                        await manager.send_personal_message(response_msg,websocket)
-                    await consumer.delete_message(stream_channel="response_channel",message_id=message[0])
+            print(f"✅ Message added to message_channel")
+
+            # Wait up to ~15s for a response from the worker (15 x 1s)
+            found = False
+            for _ in range(15):
+                response = await consumer.consume_stream(count=10, block=1000, stream_channel="response_channel")
+                if not response:
+                    continue
+                print(response)
+                for stream, messages in response:
+                    for message in messages:
+                        response_token = message[1].get(b"token") or message[1].get("token")
+                        response_msg = message[1].get(b"msg") or message[1].get("msg")
+
+                        if response_token and response_msg:
+                            response_token = response_token.decode() if isinstance(response_token, bytes) else response_token
+                            response_msg = response_msg.decode() if isinstance(response_msg, bytes) else response_msg
+
+                            if token == response_token:
+                                print("✅ Token matched. Sending response...")
+                                await manager.send_personal_message(response_msg, websocket)
+                                found = True
+                                # Delete only the message we processed for this token
+                                await consumer.delete_message(stream_channel="response_channel", message_id=message[0])
+                            else:
+                                # Do NOT delete messages meant for other tokens
+                                pass
+                if found:
+                    break
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+# Simple echo WebSocket to validate connectivity without token/Redis
+@chat.websocket("/ws_test")
+async def websocket_test(ws: WebSocket):
+    await ws.accept()
+    try:
+        while True:
+            data = await ws.receive_text()
+            await ws.send_text(f"echo: {data}")
+    except WebSocketDisconnect:
+        pass
 
 

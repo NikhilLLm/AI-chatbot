@@ -1,18 +1,37 @@
+# from worker.src.redis.config import Redis
+# from redis.commands.json.path import Path
+
+# class Cache:
+#     def __init__(self,json_client):
+#         self.json_client=json_client
+
+#     async def get_chat_history(self,token:str):
+#         data=self.json_client.json().get(str(token),Path.root_path())
+#         return data
+    
+
+#     async def add_message_to_cache(self,token:str,source:str,message_data:dict):
+#         if source=="human":
+#             message_data['msg']="Human: "+message_data['msg']
+#         elif source=="gpt":
+#             message_data['msg']="GPT: "+message_data['msg']
+#         self.json_client.json().arrappend(str(token),Path(".messages"),message_data)
+
 from worker.src.redis.config import Redis
 from redis.commands.json.path import Path
 
 class Cache:
-    def __init__(self,json_client):
-        self.json_client=json_client
+    def __init__(self, json_client):
+        self.json_client = json_client
 
-    async def get_chat_history(self,token:str):
-        data=self.json_client.json().get(str(token),Path.root_path())
+    async def get_chat_history(self, token: str):
+        data = await self.json_client.json().get(str(token), Path.root_path())
         return data
     
+    async def add_message_to_cache(self, token: str, source: str, message_data: dict):
+        if source == "human":
+            message_data['msg'] = "Human: " + message_data['msg']
+        elif source == "gpt":
+            message_data['msg'] = "GPT: " + message_data['msg']
 
-    async def add_message_to_cache(self,token:str,source:str,message_data:dict):
-        if source=="human":
-            message_data['msg']="Human: "+message_data['msg']
-        elif source=="gpt":
-            message_data['msg']="GPT: "+message_data['msg']
-        self.json_client.json().arrappend(str(token),Path(".messages"),message_data)
+        await self.json_client.json().arrappend(str(token), Path(".messages"), message_data)
