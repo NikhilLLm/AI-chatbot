@@ -12,7 +12,7 @@ redis=Redis()
 
 async def main():
     try:
-        json_client = redis.create_rejson_connection()
+        json_client = await redis.create_connection()
         redis_client = await redis.create_connection()
         consumer = StreamConsumer(redis_client)
         producer = Producer(redis_client)
@@ -23,8 +23,11 @@ async def main():
         while True:
             try:
                 print("🔄 Checking message channel...")
-                response = await consumer.consume_stream(count=1, block=2000, stream_channel="message_channel")
+                response = await consumer.consume_stream(count=1, block=1000, stream_channel="message_channel")
                 print("📩 Stream response:", response)
+                
+                if not response:
+                    print("⏳ No new messages, waiting...")
                 
                 if response:
                     for stream, messages in response:
@@ -56,13 +59,13 @@ async def main():
                                         "name": "User",
                                         "session_start": __import__('datetime').datetime.now().isoformat()
                                     })
-                                    data = await cache.get_chat_history(token=token)
+                                    # data = await cache.get_chat_history(token=token)
                                 
                                 message_data = data['messages'][-5:]
                                 input = ["" + i['msg'] for i in message_data]
                                 input = " ".join(input)
                             
-                                res = GPT().query(input=input)
+                                res = await GPT().query(input=input)
                                 print("🤖 GPT Response:", res)
                                 if res is None:
                                     print("❌ GPT response failed. Skipping message creation.")

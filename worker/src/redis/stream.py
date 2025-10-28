@@ -6,9 +6,21 @@ class StreamConsumer:
         self.last_ids = {}  # Track last read ID for each channel
 
     async def consume_stream(self, count: int, block: int, stream_channel):
-        # Read only new messages (avoid replay) using '$'
+        # Use the last known ID or '0' for first read to ensure we don't miss messages
+        last_id = self.last_ids.get(stream_channel, '0')
+        
         response = await self.redis_client.xread(
-            streams={stream_channel: '$'}, count=count, block=block)
+            streams={stream_channel: last_id}, 
+            count=count, 
+            block=block
+        )
+        
+        # Update last_id if we got messages
+        if response:
+            for stream_name, messages in response:
+                if messages:
+                    self.last_ids[stream_channel] = messages[-1][0]
+                    print(f"📝 Updated last_id for {stream_channel}: {self.last_ids[stream_channel]}")
         
         return response
 

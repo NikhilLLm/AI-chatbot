@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
-import requests
+import aiohttp
 import json
+import asyncio
 
 # Load .env file (update with your path)
 load_dotenv(dotenv_path="C:/Users/nshej/chatbot/worker/two.env")
@@ -29,7 +30,7 @@ class GPT:
 
         # Base payload structure (model + messages)
         self.payload = {
-            "model": "qwen/qwen-2.5-72b-instruct:free",
+            "model": "qwen/qwen2.5-vl-72b-instruct",
             "messages": [{"role": "user", "content": ""}],
             "parameters":{
                 "return_full_text": False,
@@ -38,39 +39,37 @@ class GPT:
             }
         }
 
-    def query(self, input: str):
-    # Update payload with user message
-     self.payload["messages"] = [{"role": "user", "content": input}]
+    async def query(self, input: str):
+        # Update payload with user message
+        self.payload["messages"] = [{"role": "user", "content": input}]
 
-    
+        # Show waiting message before the request
+        print("⏳ Waiting for model to respond...")
  
-     # Show waiting message before the request
-     print("⏳ Waiting for model to respond...")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.url,
+                    headers=self.headers,
+                    json=self.payload,
+                    timeout=60
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        text = data["choices"][0]["message"]["content"]
+                        res = str(text.split("Human:")[0]).strip("\n").strip()
+                        print("✅ Model responded successfully!\n")
+                        return res
+                    elif response.status == 503:
+                        print("⏳ Model is loading, try again in ~20 seconds")
+                    else:
+                        text = await response.text()
+                        print(f"❌ Error {response.status}: {text}")
+                    return None
  
-     try:
-         response = requests.post(
-             self.url,
-             headers=self.headers,
-             data=json.dumps(self.payload),
-             timeout=60
-         )
- 
-         if response.status_code == 200:
-             data = response.json()
-             text=data["choices"][0]["message"]["content"]
-             res=str(text.split("Human:")[0]).strip("\n").strip()
-             print("✅ Model responded successfully!\n")
-             return res
-         elif response.status_code == 503:
-             print("⏳ Model is loading, try again in ~20 seconds")
-         else:
-             print(f"❌ Error {response.status_code}: {response.text}")
- 
-         return None
- 
-     except Exception as e:
-         print(f"❌ Error: {e}")
-         return None
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            return None
 
 
 if __name__ == "__main__":
